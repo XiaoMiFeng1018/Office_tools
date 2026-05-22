@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<title>发票PDF重命名工具</title>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.js";
+</script>
+<style>
+*{box-sizing:border-box;font-family:微软雅黑}
+body{background:#f4f7fa;margin:0;padding:20px}
+.main{max-width:700px;margin:30px auto;background:#fff;padding:25px;border-radius:12px;box-shadow:0 2px 10px #00000010}
+h1{color:#2d5af1;margin:0 0 10px}
+.tip{color:#666;margin-bottom:15px}
+button{background:#2d5af1;color:white;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:14px}
+button:hover{opacity:.9}
+#log{background:#f9f9f9;padding:12px;border-radius:6px;margin-top:15px;height:280px;overflow-y:auto;white-space:pre-line}
+</style>
+</head>
+<body>
+<div class="main">
+<h1>📄 发票PDF自动重命名工具</h1>
+<p class="tip">选择PDF文件 → 自动提取发票号码 → 下载重命名后的文件</p>
+<input type="file" id="files" multiple accept=".pdf"><br><br>
+<button onclick="start()">开始处理</button>
+<div id="log">等待选择文件...</div>
+</div>
+
+<script>
+const logDiv = document.getElementById('log');
+function print(m){ logDiv.textContent += m + '\n'; logDiv.scrollTop = logDiv.scrollHeight; }
+function clearLog(){ logDiv.textContent = ''; }
+
+async function extractInvoiceNumber(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async function(e){
+      try{
+        const typedArray = new Uint8Array(e.target.result);
+        const pdf = await pdfjsLib.getDocument(typedArray).promise;
+        let text = '';
+        for(let i=1; i<=pdf.numPages; i++){
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          content.items.forEach(item => text += item.str + ' ');
+        }
+        // 匹配发票号码（支持多种格式）
+        const match = text.match(/(?:发票号码|发票号)\s*[:：]?\s*(\d{8,21})/) || text.match(/(\d{8,21})(?:\s*\(发票号码\))?/);
+        resolve(match ? match[1] : null);
+      }catch(err){
+        reject(err);
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function start(){
+  const files = document.getElementById('files').files;
+  if(files.length === 0){ alert('请先选择PDF文件'); return; }
+  clearLog();
+  print('开始处理...');
+  for(const file of files){
+    print(`处理中：${file.name}`);
+    try{
+      const invoiceNo = await extractInvoiceNumber(file);
+      if(invoiceNo){
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${invoiceNo}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        print(`✅ 成功：${invoiceNo}.pdf`);
+      }else{
+        print(`❌ 未找到发票号码：${file.name}`);
+      }
+    }catch(err){
+      print(`❌ 处理失败：${file.name} - ${err.message}`);
+    }
+  }
+  print('\n🎉 全部处理完成！');
+}
+</script>
+</body>
+</html>
