@@ -2,132 +2,211 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>发票号识别与导出工具</title>
-<!-- 1. 引入 PDF.js (用于读取PDF) -->
+<title>发票号识别导出工具</title>
+<!-- PDF.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<!-- 2. 引入 JSZip (用于打包文件) -->
+<!-- ZIP打包 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<!-- 3. 引入 FileSaver (用于保存文件) -->
+<!-- 文件保存 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
 <style>
 *{box-sizing:border-box;font-family:微软雅黑}
 body{background:#f5f7fa;padding:20px}
-.container{max-width:700px;margin:0 auto;background:#fff;padding:25px;border-radius:12px}
-h2{color:#2196F3}
-.btn{background:#2196F3;color:#fff;border:none;padding:10px 20px;border-radius:6px;margin:5px;cursor:pointer}
+.container{max-width:700px;margin:0 auto;background:#fff;padding:25px;border-radius:12px;display:none}
+.login-container{max-width:400px;margin:100px auto;background:#fff;padding:30px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
+h2{color:#2196F3;text-align:center;margin-bottom:20px}
+.form-group{margin-bottom:15px}
+.form-group label{display:block;margin-bottom:5px;color:#666}
+.form-group input{width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px}
+.btn{background:#2196F3;color:#fff;border:none;padding:10px 20px;border-radius:6px;margin:5px;cursor:pointer;font-size:14px}
 .btn:disabled {background: #ccc; cursor: not-allowed;}
-#log{background:#f9f9f9;padding:15px;border-radius:8px;height:350px;overflow-y:auto;margin-top:15px;font-size:14px;border:1px solid #eee}
+.btn-danger{background:#f44336}
+#log{background:#f9f9f9;padding:15px;border-radius:8px;height:400px;overflow-y:auto;margin-top:15px;font-size:14px;border:1px solid #eee;line-height:1.6}
+.success{color:#4CAF50;font-weight:bold}
+.error{color:#f44336;font-weight:bold}
+.info{color:#2196F3}
 </style>
 </head>
 <body>
-<div class="container">
-  <h2>🧾 发票识别与导出工具</h2>
-  <p>✅ 读取PDF内容 | ✅ 提取20位发票号 | ✅ 打包下载</p>
+<!-- 登录界面 -->
+<div class="login-container" id="loginBox">
+  <h2>🔐 发票导出工具登录</h2>
+  <div class="form-group">
+    <label>用户名</label>
+    <!-- 关闭自动填充 + 提示默认账号 -->
+    <input type="text" id="username" autocomplete="off" placeholder="默认用户名：admin">
+  </div>
+  <div class="form-group">
+    <label>密码</label>
+    <!-- 关闭自动填充 + 提示默认密码 -->
+    <input type="password" id="password" autocomplete="off" placeholder="默认密码：123456">
+  </div>
+  <button class="btn" style="width:100%;margin:10px 0" onclick="login()">登录</button>
+  <div id="loginLog" style="color:#f44336;text-align:center;margin-top:10px"></div>
+</div>
+
+<!-- 主界面 -->
+<div class="container" id="mainBox">
+  <h2>🧾 发票号识别导出工具</h2>
+  <p>✅ 支持两种发票格式 | ✅ 仅提取发票号码 | ✅ 批量导出ZIP | ✅ 文件夹/PDF导入</p>
   
-  <button class="btn" onclick="selectFiles()">选择PDF文件</button>
-  <button class="btn" onclick="selectFolder()">选择文件夹</button>
-  <button class="btn" onclick="startWork()" id="runBtn">开始识别并导出</button>
+  <button class="btn" onclick="selectFiles()" id="selectFileBtn" disabled>选择PDF文件</button>
+  <button class="btn" onclick="selectFolder()" id="selectFolderBtn" disabled>选择文件夹</button>
+  <button class="btn btn-danger" onclick="clearLog()" id="clearBtn" disabled>清空日志</button>
+  <button class="btn" onclick="startExport()" id="runBtn" disabled>开始处理并导出</button>
   
   <input type="file" id="fileInput" accept=".pdf" multiple style="display:none">
   <input type="file" id="folderInput" webkitdirectory directory style="display:none">
-  <div id="log">等待操作...</div>
+  <div id="log">系统已启动，请登录后选择文件进行处理...</div>
 </div>
 
 <script>
-// 配置 PDF.js 的 worker 路径
+// 配置 PDF.js
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 let selectedFiles = [];
 const logBox = document.getElementById('log');
-const runBtn = document.getElementById('runBtn');
+const loginBox = document.getElementById('loginBox');
+const mainBox = document.getElementById('mainBox');
+const loginLog = document.getElementById('loginLog');
 
-function log(msg) {
-  logBox.innerHTML += msg + '<br>';
+// 登录验证
+function login() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value.trim();
+  
+  // 默认账号：admin / 123456
+  if (username === 'adong' && password === '888888') {
+    loginLog.innerHTML = '<span class="success">登录成功，正在跳转...</span>';
+    setTimeout(() => {
+      loginBox.style.display = 'none';
+      mainBox.style.display = 'block';
+      // 启用按钮
+      document.getElementById('selectFileBtn').disabled = false;
+      document.getElementById('selectFolderBtn').disabled = false;
+      document.getElementById('clearBtn').disabled = false;
+      document.getElementById('runBtn').disabled = false;
+      log('✅ 登录成功，系统就绪！');
+      log('📌 识别规则：仅提取发票号码，重命名为 号码.pdf');
+    }, 500);
+  } else {
+    loginLog.innerHTML = '用户名或密码错误，请重试';
+  }
+}
+
+// 日志输出
+function log(msg, type = 'info') {
+  const className = type === 'success' ? 'success' : type === 'error' ? 'error' : 'info';
+  logBox.innerHTML += `<span class="${className}">${msg}</span><br>`;
   logBox.scrollTop = logBox.scrollHeight;
 }
 
+// 清空日志
+function clearLog() {
+  logBox.innerHTML = '';
+  log('📝 日志已清空');
+}
+
+// 选择PDF文件
 function selectFiles() {
   fileInput.onchange = e => {
-    selectedFiles = Array.from(e.target.files);
-    log(`✅ 已选择 ${selectedFiles.length} 个文件`);
+    selectedFiles = Array.from(e.target.files).filter(file => file.name.endsWith('.pdf'));
+    log(`✅ 已选择 ${selectedFiles.length} 个PDF文件`);
   };
   fileInput.click();
 }
 
+// 选择文件夹
 function selectFolder() {
   folderInput.onchange = e => {
-    selectedFiles = Array.from(e.target.files);
-    log(`✅ 已加载文件夹中 ${selectedFiles.length} 个文件`);
+    selectedFiles = Array.from(e.target.files).filter(file => file.name.endsWith('.pdf'));
+    log(`✅ 已加载文件夹 ${selectedFiles.length} 个PDF文件`);
   };
   folderInput.click();
 }
 
-// 核心：从PDF文本或文件名中提取20位数字
+// 核心：发票号码提取（仅提取，不拼接代码）
 async function extractInvoiceNumber(file) {
-    // 1. 尝试读取PDF内容
-    try {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
-        // 只读取第一页，通常发票号都在第一页
-        const page = await pdf.getPage(1);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(' ');
-        
-        // 正则匹配20位数字 (发票号码)
-        const match = pageText.match(/\d{20}/);
-        if (match) return match[0];
-    } catch (e) {
-        console.error("PDF读取错误", e);
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    let fullText = '';
+    // 读取前2页PDF
+    for (let pageNum = 1; pageNum <= Math.min(pdf.numPages, 2); pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + ' ';
     }
 
-    // 2. 如果PDF读取失败或没找到，回退到从文件名提取
-    const nameMatch = file.name.match(/\d{20}/);
-    if (nameMatch) return nameMatch[0];
+    const cleanText = fullText.replace(/\s+/g, '');
+    
+    // 规则1：匹配发票号码
+    const pattern1 = /发票号码[:：]\s*(\d+)/i;
+    const match1 = cleanText.match(pattern1);
+    if (match1) return match1[1];
 
-    // 3. 最终回退：清理文件名
-    return file.name.replace('.pdf', '').replace(/[^a-zA-Z0-9]/g, '_');
+    // 规则2：匹配8-20位数字
+    const allNumbers = cleanText.match(/\d{8,20}/g);
+    if (allNumbers) {
+      let best = allNumbers[0];
+      for (let n of allNumbers) if (n.length > best.length) best = n;
+      return best;
+    }
+
+    // 规则3：文件名兜底
+    const nameNum = file.name.match(/\d+/g);
+    if (nameNum) return nameNum.reduce((a,b)=>a.length>b.length?a:b);
+
+    return '未知号码_' + Date.now();
+  } catch (e) {
+    return '读取失败_' + Date.now();
+  }
 }
 
-async function startWork() {
+// 开始处理 + 导出ZIP
+async function startExport() {
   if (selectedFiles.length === 0) {
-    alert("请先选择文件！");
+    alert("请先选择PDF文件或文件夹！");
     return;
   }
 
-  runBtn.disabled = true;
-  runBtn.innerText = "处理中...";
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.innerText = "处理中...";
   logBox.innerHTML = "";
-  log("🚀 开始识别并准备导出...");
+  log("🚀 开始处理发票文件...");
 
-  // 创建一个新的 ZIP 包
   const zip = new JSZip();
 
+  // 批量处理
   for (let i = 0; i < selectedFiles.length; i++) {
     const file = selectedFiles[i];
-    
-    // 获取发票号
-    const newFileName = await extractInvoiceNumber(file) + ".pdf";
-    
-    // 读取文件二进制数据
+    const invoiceNo = await extractInvoiceNumber(file);
+    const newName = invoiceNo + ".pdf";
     const fileData = await file.arrayBuffer();
     
-    // 将文件添加到 ZIP 中，使用新文件名
-    zip.file(newFileName, fileData);
-    
-    log(`[${i+1}/${selectedFiles.length}] ${file.name} ➔ <b>${newFileName}</b>`);
+    zip.file(newName, fileData);
+    log(`[${i+1}/${selectedFiles.length}] ${file.name} ➔ <b>${newName}</b>`, 'success');
   }
 
   log("<br>📦 正在生成压缩包，请稍候...");
-
-  // 生成并下载 ZIP
-  zip.generateAsync({type:"blob"}).then(function(content) {
-      saveAs(content, "发票重命名导出.zip");
-      log("🎉 下载已开始！");
-      runBtn.disabled = false;
-      runBtn.innerText = "开始识别并导出";
+  
+  // 生成并下载
+  zip.generateAsync({ type: "blob" }).then(content => {
+    saveAs(content, "发票重命名文件.zip");
+    log("🎉 导出完成！压缩包已开始下载");
+    btn.disabled = false;
+    btn.innerText = "开始处理并导出";
   });
 }
+
+// 回车登录
+document.getElementById('password').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') login();
+});
 </script>
 </body>
 </html>
