@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>办公自动化工具箱</title>
+<style>
+    *{
+        margin:0;
+        padding:0;
+        box-sizing:border-box;
+        font-family: "微软雅黑",sans-serif;
+    }
+    body{
+        background:#f5f7fa;
+        padding:30px;
+    }
+    .container{
+        max-width:1000px;
+        margin:0 auto;
+    }
+    .title{
+        text-align:center;
+        font-size:26px;
+        color:#2196F3;
+        margin-bottom:30px;
+    }
+    .tool-grid{
+        display:grid;
+        grid-template-columns: repeat(auto-fill,minmax(200px,1fr));
+        gap:20px;
+    }
+    .tool-card{
+        background:#fff;
+        border-radius:12px;
+        padding:25px 20px;
+        text-align:center;
+        box-shadow:0 2px 8px rgba(0,0,0,0.08);
+        cursor:pointer;
+        transition:0.2s;
+    }
+    .tool-card:hover{
+        transform:translateY(-5px);
+        box-shadow:0 5px 15px rgba(0,0,0,0.1);
+    }
+    .tool-icon{
+        font-size:36px;
+        margin-bottom:15px;
+    }
+    .tool-name{
+        font-size:16px;
+        font-weight:bold;
+        color:#333;
+        margin-bottom:8px;
+    }
+    .tool-desc{
+        font-size:12px;
+        color:#666;
+    }
+</style>
+</head>
+
+<body>
+<div class="container">
+    <h1 class="title">🧰 办公自动化工具箱</h1>
+
+    <div class="tool-grid">
+        <div class="tool-card" onclick="runTool('/api/invoice-rename')">
+            <div class="tool-icon">📄</div>
+            <div class="tool-name">发票PDF改名</div>
+            <div class="tool-desc">提取号码 · 批量重命名 · 打包导出</div>
+        </div>
+
+        <div class="tool-card" onclick="runTool('/api/excel-merge')">
+            <div class="tool-icon">📊</div>
+            <div class="tool-name">Excel表格合并</div>
+            <div class="tool-desc">多表合并 · 去重 · 汇总</div>
+        </div>
+
+        <div class="tool-card" onclick="runTool('/api/pdf-merge')">
+            <div class="tool-icon">📎</div>
+            <div class="tool-name">PDF合并</div>
+            <div class="tool-desc">多个PDF合成一个</div>
+        </div>
+
+        <div class="tool-card">
+            <div class="tool-icon">🔧</div>
+            <div class="tool-name">待开发</div>
+            <div class="tool-desc">敬请期待</div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function runTool(api) {
+    try {
+        let res = await fetch("http://127.0.0.1:8888" + api, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+        let json = await res.json();
+        alert(json.msg);
+    } catch (e) {
+        alert("请先启动后端服务！");
+    }
+}
+</script>
+</body>
+</html>
