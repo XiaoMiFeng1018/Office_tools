@@ -1,148 +1,194 @@
-import os
-import shutil
-import re
-import pdfplumber
-import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>发票号识别导出工具</title>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.js";
+</script>
+<style>
+*{box-sizing:border-box;font-family:微软雅黑}
+body{background:#f5f7fa;padding:20px}
+.container{max-width:700px;margin:0 auto;background:#fff;padding:25px;border-radius:12px;display:none}
+.login-container{max-width:400px;margin:100px auto;background:#fff;padding:30px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
+h2{color:#2196F3;text-align:center;margin-bottom:20px}
+.form-group{margin-bottom:15px}
+.form-group label{display:block;margin-bottom:5px;color:#666}
+.form-group input{width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px}
+.btn{background:#2196F3;color:#fff;border:none;padding:10px 20px;border-radius:6px;margin:5px;cursor:pointer;font-size:14px}
+.btn:disabled {background: #ccc; cursor: not-allowed;}
+.btn-danger{background:#f44336}
+#log{background:#f9f9f9;padding:15px;border-radius:8px;height:400px;overflow-y:auto;margin-top:15px;font-size:14px;border:1px solid #eee;line-height:1.6}
+.success{color:#4CAF50;font-weight:bold}
+.error{color:#f44336;font-weight:bold}
+.info{color:#2196F3}
+.tips{text-align:center;color:#4CAF50;margin-bottom:15px}
+</style>
+</head>
+<body>
+<!-- 登录界面 -->
+<div class="login-container" id="loginBox">
+  <h2>🔐 发票导出工具登录</h2>
+  <div class="form-group">
+    <label>用户名</label>
+    <input type="text" id="username" autocomplete="off" placeholder="默认用户名：admin">
+  </div>
+  <div class="form-group">
+    <label>密码</label>
+    <input type="password" id="password" autocomplete="off" placeholder="默认密码：123456">
+  </div>
+  <button class="btn" style="width:100%;margin:10px 0" onclick="login()">登录</button>
+  <div id="loginLog" style="color:#f44336;text-align:center;margin-top:10px"></div>
+</div>
 
-# ====================== 核心代码（完全不变） ======================
-def get_invoice_number(pdf_path):
-    try:
-        with pdfplumber.open(pdf_path) as pdf:
-            text = ""
-            for page in pdf.pages:
-                text += page.extract_text() or ""
+<!-- 主界面 -->
+<div class="container" id="mainBox">
+  <h2>📄 发票号识别导出工具</h2>
+  <div class="tips">
+    ✅ 支持两种发票格式 | ✅ 仅提取发票号码 | ✅ 批量导出ZIP | ✅ 文件夹/PDF导入
+  </div>
+  
+  <button class="btn" onclick="selectFiles()" id="selectFileBtn" disabled>选择PDF文件</button>
+  <button class="btn" onclick="selectFolder()" id="selectFolderBtn" disabled>选择文件夹</button>
+  <button class="btn btn-danger" onclick="clearLog()" id="clearBtn" disabled>清空日志</button>
+  <button class="btn" onclick="startExport()" id="runBtn" disabled>开始处理并导出</button>
+  
+  <input type="file" id="fileInput" accept=".pdf" multiple style="display:none">
+  <input type="file" id="folderInput" webkitdirectory directory style="display:none">
+  <div id="log">系统已启动，请登录后选择文件进行处理...</div>
+</div>
 
-        patterns = [
-            re.compile(r"发票号码\s*[:：]\s*(\d{21})"),
-            re.compile(r"发票号\s*[:：]\s*(\d{21})"),
-            re.compile(r"发票号码\s*(\d{21})"),
-            re.compile(r"发票号码\s*[:：]\s*(\d+)"),
-        ]
+<script>
+let selectedFiles = [];
+const logBox = document.getElementById('log');
+const loginBox = document.getElementById('loginBox');
+const mainBox = document.getElementById('mainBox');
+const loginLog = document.getElementById('loginLog');
 
-        for pat in patterns:
-            match = pat.search(text)
-            if match:
-                return match.group(1).strip()
+// 登录验证
+function login() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value.trim();
+  
+  // 默认账号：admin / 123456
+  if (username === 'admin' && password === '123456') {
+    loginLog.innerHTML = '<span class="success">登录成功，正在跳转...</span>';
+    setTimeout(() => {
+      loginBox.style.display = 'none';
+      mainBox.style.display = 'block';
+      // 启用按钮
+      document.getElementById('selectFileBtn').disabled = false;
+      document.getElementById('selectFolderBtn').disabled = false;
+      document.getElementById('clearBtn').disabled = false;
+      document.getElementById('runBtn').disabled = false;
+      log('✅ 登录成功，系统就绪！', 'success');
+      log('📌 识别规则：仅提取发票号码，重命名为 号码.pdf', 'info');
+    }, 500);
+  } else {
+    loginLog.innerHTML = '用户名或密码错误，请重试';
+  }
+}
 
-        return None
-    except Exception as e:
-        print(f"⚠️ 读取失败: {e}")
-        return None
+// 日志输出
+function log(msg, type = 'info') {
+  const className = type === 'success' ? 'success' : type === 'error' ? 'error' : 'info';
+  logBox.innerHTML += `<span class="${className}">${msg}</span><br>`;
+  logBox.scrollTop = logBox.scrollHeight;
+}
 
-def clear_output_folder(folder_path):
-    if os.path.exists(folder_path):
-        for filename in os.listdir(folder_path):
-            file_path = os.path.join(folder_path, filename)
-            try:
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-            except:
-                pass
+// 清空日志
+function clearLog() {
+  logBox.innerHTML = '';
+  log('📝 日志已清空', 'info');
+}
 
-# ====================== 界面增强：支持 文件 + 文件夹 ======================
-class InvoiceTool:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("发票重命名工具（支持文件/文件夹）")
-        self.root.geometry("680x550")
+// 选择PDF文件
+function selectFiles() {
+  fileInput.onchange = e => {
+    selectedFiles = Array.from(e.target.files).filter(file => file.name.endsWith('.pdf'));
+    log(`✅ 已选择 ${selectedFiles.length} 个PDF文件`, 'success');
+  };
+  fileInput.click();
+}
 
-        # 输入方式选择
-        tk.Label(root, text="选择输入方式：", font=("微软雅黑",11)).place(x=20,y=20)
-        self.input_mode = tk.StringVar(value="folder")
-        tk.Radiobutton(root, text="📁 导入文件夹", variable=self.input_mode, value="folder", font=("微软雅黑",10)).place(x=150,y=20)
-        tk.Radiobutton(root, text="📄 导入单个/多个文件", variable=self.input_mode, value="file", font=("微软雅黑",10)).place(x=320,y=20)
+// 选择文件夹
+function selectFolder() {
+  folderInput.onchange = e => {
+    selectedFiles = Array.from(e.target.files).filter(file => file.name.endsWith('.pdf'));
+    log(`✅ 已加载文件夹 ${selectedFiles.length} 个PDF文件`, 'success');
+  };
+  folderInput.click();
+}
 
-        # 路径
-        tk.Label(root, text="源路径：", font=("微软雅黑",10)).place(x=20,y=60)
-        self.source_path = tk.StringVar()
-        tk.Entry(root, textvariable=self.source_path, width=70).place(x=20,y=90)
-        tk.Button(root, text="浏览", command=self.choose_source, width=8).place(x=580,y=88)
+// 核心：发票号码提取
+async function extractInvoiceNumber(file) {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    let fullText = '';
+    for (let pageNum = 1; pageNum <= Math.min(pdf.numPages, 2); pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + ' ';
+    }
 
-        # 输出
-        tk.Label(root, text="导出文件夹：", font=("微软雅黑",10)).place(x=20,y=130)
-        self.output_path = tk.StringVar()
-        tk.Entry(root, textvariable=self.output_path, width=70).place(x=20,y=160)
-        tk.Button(root, text="浏览", command=self.choose_output, width=8).place(x=580,y=158)
+    const cleanText = fullText.replace(/\s+/g, '');
+    const pattern = /(?:发票号码|发票号)\D*?(\d{8,21})/;
+    const match = cleanText.match(pattern);
+    if (match) return match[1];
 
-        # 开始按钮
-        tk.Button(root, text="开始处理", command=self.start_run, bg="#2196F3", fg="white",
-                  width=25, height=2, font=("微软雅黑",12)).place(x=200,y=210)
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
 
-        # 日志
-        self.log = scrolledtext.ScrolledText(root, width=80, height=20)
-        self.log.place(x=20,y=280)
+// 开始处理 + 导出ZIP
+async function startExport() {
+  if (selectedFiles.length === 0) {
+    alert("请先选择PDF文件或文件夹！");
+    return;
+  }
 
-    # 选择来源：自动根据模式选 文件夹 或 文件
-    def choose_source(self):
-        if self.input_mode.get() == "folder":
-            path = filedialog.askdirectory(title="选择发票文件夹")
-        else:
-            path = filedialog.askopenfilenames(title="选择PDF文件", filetypes=[("PDF文件", "*.pdf")])
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.innerText = "处理中...";
+  logBox.innerHTML = "";
+  log("🚀 开始处理发票文件...", 'info');
 
-        if path:
-            self.source_path.set(str(path))
+  const zip = new JSZip();
 
-    def choose_output(self):
-        path = filedialog.askdirectory(title="选择保存文件夹")
-        if path:
-            self.output_path.set(path)
+  for (let i = 0; i < selectedFiles.length; i++) {
+    const file = selectedFiles[i];
+    const invoiceNo = await extractInvoiceNumber(file);
+    if (invoiceNo) {
+      const newName = invoiceNo + ".pdf";
+      zip.file(newName, await file.arrayBuffer());
+      log(`[${i+1}/${selectedFiles.length}] ${file.name} ➔ ${newName}`, 'success');
+    } else {
+      log(`❌ 未识别发票号：${file.name}`, 'error');
+    }
+  }
 
-    def print_log(self, msg):
-        self.log.insert(tk.END, msg + "\n")
-        self.log.see(tk.END)
-        self.root.update()
+  log("<br>📦 正在生成压缩包，请稍候...", 'info');
+  
+  zip.generateAsync({ type: "blob" }).then(content => {
+    saveAs(content, "发票重命名文件.zip");
+    log("🎉 导出完成！压缩包已开始下载", 'success');
+    btn.disabled = false;
+    btn.innerText = "开始处理并导出";
+  });
+}
 
-    # 处理逻辑：兼容 文件 / 文件夹
-    def start_run(self):
-        source = self.source_path.get()
-        output_dir = self.output_path.get()
-
-        if not source or not output_dir:
-            messagebox.showerror("错误", "请选择源路径和导出文件夹！")
-            return
-
-        self.print_log("="*60)
-        self.print_log("开始处理...")
-        self.print_log("="*60)
-
-        clear_output_folder(output_dir)
-        os.makedirs(output_dir, exist_ok=True)
-        pdf_list = []
-
-        # 解析来源
-        if self.input_mode.get() == "folder":
-            folder = source
-            for f in os.listdir(folder):
-                if f.lower().endswith(".pdf"):
-                    pdf_list.append(os.path.join(folder, f))
-        else:
-            try:
-                # 多个文件格式
-                files = eval(source)
-                pdf_list = list(files)
-            except:
-                pdf_list = [source]
-
-        # 处理
-        for path in pdf_list:
-            if not os.path.exists(path):
-                continue
-            filename = os.path.basename(path)
-            invoice_no = get_invoice_number(path)
-
-            if invoice_no:
-                new_name = f"{invoice_no}.pdf"
-                new_path = os.path.join(output_dir, new_name)
-                shutil.copy2(path, new_path)
-                self.print_log(f"✅ {filename} → {new_name}")
-            else:
-                self.print_log(f"❌ 无法识别发票号：{filename}")
-
-        self.print_log("\n🎉 全部处理完成！")
-        messagebox.showinfo("完成", "发票重命名已完成！")
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    InvoiceTool(root)
-    root.mainloop()
+// 回车登录
+document.getElementById('password').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') login();
+});
+</script>
+</body>
+</html>
